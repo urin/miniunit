@@ -10,8 +10,7 @@
 **/
 #pragma once
 
-#ifdef _WIN32
-#  define MINIUNIT_CONFIG_NO_COLOR
+#ifdef _MSC_VER
 #  ifndef _CRT_SECURE_NO_WARNINGS
 #    define _CRT_SECURE_NO_WARNINGS
 #  endif
@@ -50,6 +49,7 @@ struct miniunit_t {
   } colors;
   char esc[9][8];
   // internals
+  bool colorable;
   int case_count;
   char case_name[1024];
   int item_count;
@@ -59,20 +59,33 @@ extern struct miniunit_t miniunit;
 extern void miniunit_log();
 
 #ifdef MINIUNIT_CONFIG_MAIN
-#  include <stdio.h>
-#  include <string.h>
-#  include <stdarg.h>
-#  ifdef _WIN32
-#    pragma comment(lib, "kernel32.lib")
-#    include <windows.h>
-#  else
-#    include <time.h>
-#  endif
 
-struct miniunit_t miniunit = {
-  { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
-  { "\x1b[0m", "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[37m" }
-};
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
+#ifdef _MSC_VER
+#  pragma comment(lib, "kernel32.lib")
+#  include <windows.h>
+#else
+#  include <time.h>
+#  include <unistd.h>
+#endif
+
+static miniunit_t miniunit_init()
+{
+  miniunit_t mu = {
+    { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
+    { "\x1b[0m", "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[37m" }
+  };
+#ifdef _MSC_VER
+#  define isatty(a) _isatty(a)
+#  define fileno(a) _fileno(a)
+#endif
+  mu.colorable = isatty(fileno(stdout));
+  return mu;
+}
+
+struct miniunit_t miniunit = miniunit_init();
 
 void miniunit_log(int color, const char *format, ...)
 {
@@ -81,30 +94,30 @@ void miniunit_log(int color, const char *format, ...)
   va_start(args, format);
   vsprintf(message, format, args);
   va_end(args);
-#  ifdef MINIUNIT_CONFIG_NO_COLOR
-  puts(message);
-#  else
-#    ifdef _WIN32
-  // TODO color support for windows
-#    else
-  printf("%s%s%s\n", miniunit.esc[color], message, miniunit.esc[0]);
-#    endif
-#  endif
+  if (miniunit.colorable) {
+#ifdef _MSC_VER
+    // TODO color support for windows
+#else
+    printf("%s%s%s\n", miniunit.esc[color], message, miniunit.esc[0]);
+#endif
+  } else {
+    puts(message);
+  }
   fflush(stdout);
 }
 
 static double miniunit_get_seconds()
 {
-#  ifdef _WIN32
+#ifdef _MSC_VER
   LARGE_INTEGER freq, now;
   QueryPerformanceFrequency(&freq);
   QueryPerformanceCounter(&now);
   return (double) now.QuadPart / freq.QuadPart;
-#  else
+#else
   timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
   return now.tv_sec + now.tv_nsec * 1e-9;
-#  endif
+#endif
 }
 
 const char *test_case(const char *case_name)
