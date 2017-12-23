@@ -20,29 +20,39 @@
 // public
 //------------------------------------------------------------------------------
 #include <stdlib.h>
+#include <stdbool.h>
+#ifdef _MSC_VER
+#else
+#  include <pthread.h>
+#endif
 
 extern const char *test_case(const char *case_name);
 
 #define expect(description, condition) do {                                    \
-  miniunit.item_count++;                                                       \
-  if (condition) {                                                             \
-    miniunit_log(miniunit.colors.green, "  (%d-%d) OK %s",                     \
-      miniunit.case_count, miniunit.item_count, (description)                  \
-    );                                                                         \
-  } else {                                                                     \
-    miniunit_log(miniunit.colors.red,                                          \
-      "  (%d-%d) NG %s (" #condition ") [%s:%d]",                              \
-      miniunit.case_count, miniunit.item_count, (description),                 \
-      __FILE__, __LINE__                                                       \
-    );                                                                         \
-    exit(1);                                                                   \
+  bool satisfied = (condition);                                                \
+  miniunit_lock();                                                             \
+  {                                                                            \
+    miniunit.item_count++;                                                     \
+    if (satisfied) {                                                           \
+      miniunit_log(miniunit.colors.green, "  (%d-%d) OK %s",                   \
+        miniunit.case_count, miniunit.item_count, (description)                \
+      );                                                                       \
+    } else {                                                                   \
+      miniunit_log(miniunit.colors.red,                                        \
+        "  (%d-%d) Failed %s (" #condition ") [%s:%d]",                        \
+        miniunit.case_count, miniunit.item_count, (description),               \
+        __FILE__, __LINE__                                                     \
+      );                                                                       \
+    }                                                                          \
   }                                                                            \
+  miniunit_unlock();                                                           \
+  if (satisfied) { exit(satisfied); }                                          \
 } while(false)
 
 //------------------------------------------------------------------------------
 // private
 //------------------------------------------------------------------------------
-struct miniunit_t {
+typedef struct miniunit_s {
   // constants
   struct {
     int none, black, red, green, yellow, blue, magenta, cyan, white;
@@ -53,13 +63,21 @@ struct miniunit_t {
   int case_count;
   char case_name[1024];
   int item_count;
-};
+  struct lock_t {
+#ifdef _MSC_VER
+    // TODO
+#else
+    pthread_mutex_t mutex;
+#endif
+  } lock;
+} miniunit_t;
 
-extern struct miniunit_t miniunit;
+#ifndef MINIUNIT_MAIN
 extern void miniunit_log();
-
-#ifdef MINIUNIT_CONFIG_MAIN
-
+extern void miniunit_lock();
+extern void miniunit_unlock();
+extern miniunit_t miniunit;
+#else
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -69,40 +87,36 @@ extern void miniunit_log();
 #else
 #  include <time.h>
 #  include <unistd.h>
+#  include <pthread.h>
 #endif
 
-static miniunit_t miniunit_init()
-{
-  miniunit_t mu = {
-    { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
-    { "\x1b[0m", "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[37m" }
-  };
+miniunit_t miniunit = {
+  .colors = { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
+  .esc = {
+    "\x1b[0m", "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m",
+    "\x1b[34m", "\x1b[35m", "\x1b[36m", "\x1b[37m"
+  },
 #ifdef _MSC_VER
-#  define isatty(a) _isatty(a)
-#  define fileno(a) _fileno(a)
+  // TODO
+  .lock = {}
+#else
+  .lock = { PTHREAD_MUTEX_INITIALIZER }
 #endif
-  mu.colorable = isatty(fileno(stdout));
-  return mu;
-}
-
-struct miniunit_t miniunit = miniunit_init();
+};
 
 void miniunit_log(int color, const char *format, ...)
 {
-  char message[1024];
+  char message[4096];
   va_list args;
   va_start(args, format);
   vsprintf(message, format, args);
   va_end(args);
-  if (miniunit.colorable) {
 #ifdef _MSC_VER
-    // TODO color support for windows
+  // TODO color support for windows
+  puts(message);
 #else
-    printf("%s%s%s\n", miniunit.esc[color], message, miniunit.esc[0]);
+  printf("%s%s%s\n", miniunit.esc[color], message, miniunit.esc[0]);
 #endif
-  } else {
-    puts(message);
-  }
   fflush(stdout);
 }
 
@@ -114,27 +128,49 @@ static double miniunit_get_seconds()
   QueryPerformanceCounter(&now);
   return (double) now.QuadPart / freq.QuadPart;
 #else
-  timespec now;
+  struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
   return now.tv_sec + now.tv_nsec * 1e-9;
 #endif
 }
 
+void miniunit_lock()
+{
+#ifdef _MSC_VER
+  // TODO
+#else
+  pthread_mutex_lock(&miniunit.lock.mutex);
+#endif
+}
+
+void miniunit_unlock()
+{
+#ifdef _MSC_VER
+  // TODO
+#else
+  pthread_mutex_unlock(&miniunit.lock.mutex);
+#endif
+}
+
 const char *test_case(const char *case_name)
 {
-  static bool has_prev_case;
-  static double prev_time;
-  double now = miniunit_get_seconds();
-  if (has_prev_case) {
-    miniunit_log(miniunit.colors.none, "  Elapsed time %.3lfsec.", now - prev_time);
-  } else {
-    has_prev_case = true;
+  miniunit_lock();
+  {
+    static bool has_prev_case;
+    static double prev_time;
+    double now = miniunit_get_seconds();
+    if (has_prev_case) {
+      miniunit_log(miniunit.colors.none, "  Elapsed time %.3lfsec.", now - prev_time);
+    } else {
+      has_prev_case = true;
+    }
+    prev_time = now;
+    miniunit.case_count++;
+    miniunit.item_count = 0;
+    strcpy(miniunit.case_name, case_name);
+    miniunit_log(miniunit.colors.cyan, "(%d) %s", miniunit.case_count, case_name);
   }
-  prev_time = now;
-  miniunit.case_count++;
-  miniunit.item_count = 0;
-  strcpy(miniunit.case_name, case_name);
-  miniunit_log(miniunit.colors.cyan, "(%d) %s", miniunit.case_count, case_name);
+  miniunit_unlock();
   return case_name;
 }
 #endif
