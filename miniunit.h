@@ -4,9 +4,7 @@
  * Copyright (c) 2017 Hayato Takenaka
  *
  * Licensed under the MIT license:
- * http://www.opensource.org/licenses/mit-license.php
- *
- * author: Hayato Takenaka (https://urin.github.io)
+ * https://opensource.org/licenses/mit-license.php
 **/
 #pragma once
 
