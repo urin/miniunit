@@ -36,10 +36,24 @@ int main()
     test_case("Subtraction", {
         expect("1 - 1 = 0", (1 - 1) == 0);
         expect("1 - 1 - 1 = -1", (1 - 1 - 1) == -1);
+        expect("example", true == false);
     });
 
     return 0;
 }
+```
+
+outputs
+
+```
+(1) Addition
+  (1-1) [Passed] 1 + 1 = 2
+  (1-2) [Passed] 1 + 1 + 1 = 3
+  Elapsed time 0.001451 sec
+(2) Subtraction
+  (2-1) [Passed] 1 - 1 = 0
+  (2-2) [Passed] 1 - 1 - 1 = -1
+  (2-3) [Failed] example (true == false) [main.c:15]
 ```
 
 ## License
