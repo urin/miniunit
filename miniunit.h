@@ -28,7 +28,7 @@
   miniunit_preproc((title));                                                   \
   double prev_time = miniunit_get_seconds();                                   \
   (proc);                                                                      \
-  miniunit_log(miniunit.colors.none, "  Elapsed time %.6fsec.",                \
+  miniunit_log(miniunit.colors.none, "  Elapsed time %.6f sec",                \
     miniunit_get_seconds() - prev_time                                         \
   );                                                                           \
 } while (false)
@@ -39,12 +39,13 @@
   {                                                                            \
     miniunit.item_count++;                                                     \
     if (satisfied) {                                                           \
-      miniunit_log(miniunit.colors.green, "  (%d-%d) OK %s",                   \
+      miniunit_log(miniunit.colors.green,                                      \
+        "  (%d-%d) [Passed] %s",                                               \
         miniunit.case_count, miniunit.item_count, (description)                \
       );                                                                       \
     } else {                                                                   \
       miniunit_log(miniunit.colors.red,                                        \
-        "  (%d-%d) Failed %s (" #condition ") [%s:%d]",                        \
+        "  (%d-%d) [Failed] %s (" #condition ") [%s:%d]",                      \
         miniunit.case_count, miniunit.item_count, (description),               \
         __FILE__, __LINE__                                                     \
       );                                                                       \
