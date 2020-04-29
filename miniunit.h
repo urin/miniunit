@@ -24,8 +24,14 @@
 #  include <pthread.h>
 #endif
 
-extern const char *test_case(const char *case_name);
-extern void print_elapsed_seconds();
+#define test_case(title, proc) do {                                            \
+  miniunit_preproc((title));                                                   \
+  double prev_time = miniunit_get_seconds();                                   \
+  (proc);                                                                      \
+  miniunit_log(miniunit.colors.none, "  Elapsed time %.6fsec.",                \
+    miniunit_get_seconds() - prev_time                                         \
+  );                                                                           \
+} while (false)
 
 #define expect(description, condition) do {                                    \
   bool satisfied = (condition);                                                \
@@ -45,13 +51,13 @@ extern void print_elapsed_seconds();
     }                                                                          \
   }                                                                            \
   miniunit_unlock();                                                           \
-  if (!satisfied) { exit(1); }                                          \
+  if (!satisfied) { exit(1); }                                                 \
 } while (false)
 
 //------------------------------------------------------------------------------
 // private
 //------------------------------------------------------------------------------
-typedef struct miniunit_s {
+typedef struct {
   // constants
   struct {
     int none, black, red, green, yellow, blue, magenta, cyan, white;
@@ -71,12 +77,14 @@ typedef struct miniunit_s {
   int item_count;
 } miniunit_t;
 
-#ifndef MINIUNIT_MAIN
-extern void miniunit_log();
+extern void miniunit_preproc(const char *title);
 extern void miniunit_lock();
 extern void miniunit_unlock();
+extern double miniunit_get_seconds();
+extern void miniunit_log(int color, const char *format, ...);
 extern miniunit_t miniunit;
-#else
+
+#ifdef MINIUNIT_MAIN
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -103,38 +111,16 @@ miniunit_t miniunit = {
 #endif
 };
 
-void miniunit_log(int color, const char *format, ...)
+void miniunit_preproc(const char *case_name)
 {
-  char message[4096];
-  va_list args;
-  va_start(args, format);
-  vsprintf(message, format, args);
-  va_end(args);
-#ifdef _MSC_VER
-  // TODO color support for windows
-  puts(message);
-#else
-  if (isatty(fileno(stdout))) {
-    printf("%s%s%s\n", miniunit.esc[color], message, miniunit.esc[0]);
-  } else {
-    puts(message);
+  miniunit_lock();
+  {
+    miniunit.case_count++;
+    miniunit.item_count = 0;
+    strcpy(miniunit.case_name, case_name);
+    miniunit_log(miniunit.colors.cyan, "(%d) %s", miniunit.case_count, case_name);
   }
-#endif
-  fflush(stdout);
-}
-
-static double miniunit_get_seconds()
-{
-#ifdef _MSC_VER
-  LARGE_INTEGER freq, now;
-  QueryPerformanceFrequency(&freq);
-  QueryPerformanceCounter(&now);
-  return (double) now.QuadPart / freq.QuadPart;
-#else
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  return now.tv_sec + now.tv_nsec * 1e-9;
-#endif
+  miniunit_unlock();
 }
 
 void miniunit_lock()
@@ -155,32 +141,39 @@ void miniunit_unlock()
 #endif
 }
 
-void print_elapsed_seconds()
+void miniunit_log(int color, const char *format, ...)
 {
-  static bool has_prev_time = false;
-  static double prev_time = 0;
-  double now = miniunit_get_seconds();
-  if (!has_prev_time) {
-    has_prev_time = true;
-    prev_time = now;
+  char message[4096];
+  va_list args;
+  va_start(args, format);
+  vsprintf(message, format, args);
+  va_end(args);
+#ifdef _MSC_VER
+  // TODO color support for windows
+  puts(message);
+#else
+  if (isatty(fileno(stdout))) {
+    printf("%s%s%s\n", miniunit.esc[color], message, miniunit.esc[0]);
+  } else {
+    puts(message);
   }
-  miniunit_log(miniunit.colors.none, "  Elapsed time %.6fsec.", now - prev_time);
-  prev_time = now;
+#endif
+  fflush(stdout);
 }
 
-const char *test_case(const char *case_name)
+double miniunit_get_seconds()
 {
-  miniunit_lock();
-  {
-    static bool has_prev_case;
-    if (has_prev_case) { print_elapsed_seconds(); } else { has_prev_case = true; }
-    miniunit.case_count++;
-    miniunit.item_count = 0;
-    strcpy(miniunit.case_name, case_name);
-    miniunit_log(miniunit.colors.cyan, "(%d) %s", miniunit.case_count, case_name);
-  }
-  miniunit_unlock();
-  return case_name;
+#ifdef _MSC_VER
+  LARGE_INTEGER freq, now;
+  QueryPerformanceFrequency(&freq);
+  QueryPerformanceCounter(&now);
+  return (double) now.QuadPart / freq.QuadPart;
+#else
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return now.tv_sec + now.tv_nsec * 1e-9;
+#endif
 }
+
 #endif
 
